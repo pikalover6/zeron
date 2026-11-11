@@ -1,8 +1,11 @@
 # Zeron Personal
 
-Personal branch of `zeronsh/zeron`, tracking upstream `main`. The initial
-base is `7437e3e989637090eedf13a690aa790f896b90fa` (2026-11-10).
-Existing PR branches are independent of this branch.
+Personal branch of `zeronsh/zeron`, tracking upstream `zeron/zgx`, the
+active beta integration branch. This is ahead of both `main` and the
+published beta releases. The initial beta integration point is `da8864f1`
+(2026-11-10), 21 commits beyond `beta-v0.2.139-beta.5`.
+Existing PR branches are independent of this branch. The original
+`main`-based setup is retained in Git history.
 
 ## Build and install
 
@@ -13,6 +16,9 @@ scripts/personal.sh install
 
 Builds the engine and beta zgx interface from this checkout, packages and
 ad hoc signs them, and installs `~/Applications/Zeron Personal.app`.
+The version includes the nearest beta tag and personal commit, for example
+`0.2.139-beta.5.personal.<commit>`; the source also includes integration
+commits after that beta tag. Both app and engine come from this checkout.
 It never opens the app. Open it yourself in Finder when ready.
 `scripts/personal.sh build` prepares the bundle without installing it;
 `scripts/personal.sh verify` verifies that bundle without opening a window.
@@ -45,7 +51,7 @@ to Zeron sync is a separate choice and may sync account data.
 ## Upstream and patches
 
 `origin` is `zeronsh/zeron`; `fork` is `pikalover6/zeron`. `personal` tracks
-`origin/main` for incoming changes and uses `fork` as its push remote.
+`origin/zeron/zgx` for incoming changes and uses `fork` as its push remote.
 Conflict-resolution reuse (`rerere`) is enabled locally.
 
 Keep each feature/fix in a focused commit. With a clean worktree:

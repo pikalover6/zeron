@@ -1,7 +1,8 @@
 # Personal Zeron fork
 
 Read `PERSONAL.md` for the build, isolation, and upstream merge workflow.
-The working branch is `personal`, based on upstream `origin/main`.
+The working branch is `personal`, tracking upstream `origin/zeron/zgx`,
+the active beta integration branch. `origin/main` lags the beta app.
 `origin` is the official repository; `fork` is the user's GitHub fork.
 Keep the old PR branches independent.
 

@@ -12,14 +12,16 @@ build() {
   case "$PROFILE" in dev) artifact=debug ;; release) artifact=release ;; *) echo 'PERSONAL_PROFILE must be dev or release' >&2; exit 1 ;; esac
   export ZERON_PERSONAL_BUILD=1
   export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-6}"
-  local version commit
+  local version commit beta_tag beta_version
   version="$(python3 - "$ROOT/Cargo.toml" <<'PY'
 import pathlib, sys, tomllib
 print(tomllib.loads(pathlib.Path(sys.argv[1]).read_text())['workspace']['package']['version'])
 PY
   )"
   commit="$(git -C "$ROOT" rev-parse --short=12 HEAD)"
-  export ZERON_BETA_VERSION="$version-personal.$commit"
+  beta_tag="$(git -C "$ROOT" describe --tags --match "beta-v$version-beta.*" --abbrev=0 HEAD 2>/dev/null || true)"
+  beta_version="${beta_tag#beta-v}"
+  export ZERON_BETA_VERSION="${beta_version:-$version-beta.0}.personal.$commit"
   mkdir -p "$OUT"
   # Cargo's config is resolved from the working directory, so build each
   # workspace from its own root. Preserve upstream's dependency pins.
@@ -120,8 +122,8 @@ case "${1:-install}" in
     cd "$ROOT"
     [[ "$(git branch --show-current)" == personal ]] || { echo 'Switch to personal first.' >&2; exit 1; }
     [[ -z "$(git status --porcelain)" ]] || { echo 'Commit or stash changes before syncing.' >&2; exit 1; }
-    git fetch origin main
-    git merge --no-edit origin/main
+    git fetch origin zeron/zgx --tags
+    git merge --no-edit origin/zeron/zgx
     echo 'Review the merge, then run scripts/personal.sh install.'
     ;;
   *) echo 'Usage: scripts/personal.sh [build|install|verify|sync]' >&2; exit 2 ;;
