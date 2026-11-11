@@ -42,7 +42,11 @@ pub const AGENT_UPDATES_TARGET: &str = "__zeron_agent_updates__";
 
 /// The app-side link a clicked banner opens when the engine posted it from
 /// its own process: `zeron://notification/<target>`.
-pub const LINK_PREFIX: &str = "zeron://notification/";
+pub const LINK_PREFIX: &str = if option_env!("ZERON_PERSONAL_BUILD").is_some() {
+    "zeron-personal://notification/"
+} else {
+    "zeron://notification/"
+};
 
 /// `zeron://notification/<target>` for a banner's target.
 pub fn link(target: &str) -> String {
@@ -479,7 +483,8 @@ mod tests {
 
     #[test]
     fn links_round_trip_their_target() {
-        assert_eq!(link("chat-1"), "zeron://notification/chat-1");
+        let scheme = if option_env!("ZERON_PERSONAL_BUILD").is_some() { "zeron-personal" } else { "zeron" };
+        assert_eq!(link("chat-1"), format!("{scheme}://notification/chat-1"));
         assert_eq!(link_target(&link("chat-1")), Some("chat-1"));
         assert_eq!(link_target(LINK_PREFIX), None);
         assert_eq!(link_target("zeron://chat/x"), None);

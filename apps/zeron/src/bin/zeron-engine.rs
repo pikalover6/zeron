@@ -15,6 +15,7 @@
 use zeron_cli::{Engines, Launch};
 
 fn main() -> anyhow::Result<()> {
+    zeron_cli::personal::initialize();
     match std::env::args().nth(1).as_deref() {
         Some("--noop-browser") => Ok(()),
         Some("--version" | "-V") => {

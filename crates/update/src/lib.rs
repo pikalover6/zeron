@@ -861,6 +861,11 @@ pub const INSTALLED_AT_ENV: &str = "ZERON_INSTALLED_AT";
 /// the running image aside (Windows renames it to `zeron.exe.old`), and a
 /// long-running engine must still recognise the installation it belongs to.
 pub fn detect_install() -> InstallKind {
+    // Personal builds are installed from source; neither the UI nor the
+    // engine may replace them with an official release.
+    if option_env!("ZERON_PERSONAL_BUILD").is_some() {
+        return InstallKind::Unmanaged;
+    }
     static INSTALL: std::sync::OnceLock<InstallKind> = std::sync::OnceLock::new();
     INSTALL
         .get_or_init(|| {

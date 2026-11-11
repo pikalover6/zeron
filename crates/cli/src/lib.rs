@@ -19,6 +19,7 @@ pub mod daemon;
 mod env;
 pub mod logging;
 pub mod paths;
+pub mod personal;
 pub mod update_cli;
 
 use clap::{CommandFactory as _, FromArgMatches as _, Parser, Subcommand};
@@ -223,6 +224,13 @@ pub fn run(version: &'static str, engines: Engines) -> Launch {
         Ok(cli) => cli,
         Err(error) => error.exit(),
     };
+    if personal::ENABLED
+        && matches!(cli.command, Some(Command::Update { .. } | Command::UpdateWatchdog | Command::Daemon { .. }))
+    {
+        return Launch::Done(Err(anyhow::anyhow!(
+            "Zeron Personal is managed by scripts/personal.sh; official updates and daemon commands are disabled"
+        )));
+    }
     if engines == Engines::Helper && cli.command.as_ref().is_some_and(Command::runs_engine) {
         // The helper parses the same arguments and does all of the below
         // itself (logging, Windows' image cleanup, the command).

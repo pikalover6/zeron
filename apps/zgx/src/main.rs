@@ -122,7 +122,9 @@ use zgx_script::{ScriptHost, Shared, Value};
 
 /// Where `ui.persist` keeps its files: the Zeron app's (the beta), apart from
 /// development builds', which are staging's.
-const APP_ID: &str = if cfg!(feature = "beta") { "zeron" } else { "zeron-zgx" };
+const APP_ID: &str = if zeron_cli::personal::ENABLED {
+    "zeron-personal"
+} else if cfg!(feature = "beta") { "zeron" } else { "zeron-zgx" };
 
 /// Setup's window, in points: room for a step and its footer, no more.
 const ONBOARDING_SIZE: (f64, f64) = (680., 500.);
@@ -159,6 +161,7 @@ fn raise_open_files() {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    zeron_cli::personal::initialize();
     #[cfg(unix)]
     raise_open_files();
     // A terminal tab's bridge (src/terminal.rs): this binary, run by zgx's
@@ -294,7 +297,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // delivered to the app as Zeron.app's are (src/links.rs).
     if cfg!(feature = "beta") {
         application = application
-            .application_id("sh.zeron.app")?
+            .application_id(if zeron_cli::personal::ENABLED {
+                zeron_cli::personal::BUNDLE_ID
+            } else { "sh.zeron.app" })?
             .on_application_event(|event, _| {
                 if let zgx_desktop::ApplicationEvent::OpenUrls(urls) = event {
                     for url in urls {

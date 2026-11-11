@@ -10,6 +10,12 @@
 
 use sha2::{Digest, Sha256};
 
+const CHAT_PREFIX: &str = if option_env!("ZERON_PERSONAL_BUILD").is_some() {
+    "zeron-personal://open/chat/"
+} else {
+    "zeron://open/chat/"
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationDeepLink {
     pub chat_id: String,
@@ -27,7 +33,7 @@ pub fn workspace_locator_of(scope: &str, identity: &str) -> String {
 
 pub fn conversation_link(chat_id: &str, workspace: &str) -> String {
     format!(
-        "zeron://open/chat/{}?workspace={}",
+        "{CHAT_PREFIX}{}?workspace={}",
         encode_component(chat_id),
         encode_component(workspace)
     )
@@ -35,7 +41,7 @@ pub fn conversation_link(chat_id: &str, workspace: &str) -> String {
 
 pub fn parse_conversation_link(url: &str) -> Result<ConversationDeepLink, &'static str> {
     let rest = url
-        .strip_prefix("zeron://open/chat/")
+        .strip_prefix(CHAT_PREFIX)
         .ok_or("not a Zeron conversation link")?;
     let (chat_id, query) = rest.split_once('?').ok_or("missing workspace locator")?;
     if chat_id.is_empty() || chat_id.contains('/') {
