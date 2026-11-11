@@ -58,6 +58,8 @@ export type Session = {
 	cwd: string?,
 	harness: string?,
 	model: string?,
+	-- Its model's name: its catalog's, else its id (chat.rs `session_value`).
+	model_label: string?,
 	effort: string?,
 	fast: boolean?,
 	-- The choices made of the model's options (option id to choice id).
@@ -169,6 +171,13 @@ end
 -- promise of its path, nil when the clipboard holds none.
 function M.paste_image(): any
 	return ui.call("chat.paste_image", nil)
+end
+
+-- A send in this device's outbox (still uploading, or stopped) taken out for
+-- good, with its prompt shown as on its way: a promise of whether it was
+-- still there. An engine from before it can refuses it "unsupported".
+function M.remove_held(id: string, item: string, message: string?): any
+	return ui.call("chat.remove_held", { id = id, item = item, message = message })
 end
 
 -- A prompt that wasn't delivered, sent again.

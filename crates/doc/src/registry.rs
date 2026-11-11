@@ -43,6 +43,9 @@ pub const KIND_PREFERENCES: &str = "preferences";
 /// Readiness only; membership and order live on individual pins.
 pub const SIDEBAR_PINS_STATE_ID: &str = "sidebarPins";
 pub const KIND_SIDEBAR_PINS: &str = "sidebarPins";
+/// A repository's name and icon, shared by its copies; see `repository_looks`.
+pub const KIND_REPOSITORY_LOOKS: &str = "repositoryLooks";
+mod repository_looks;
 mod sidebar_pins;
 mod sidebar_sections;
 
@@ -963,6 +966,35 @@ impl RegistryDoc {
         }]);
     }
 
+    /// An `update` carrying only the fields whose value differs from what
+    /// the row already shows (overlay included), and nothing when none do.
+    /// Every write the room applies costs it a stored row and a broadcast to
+    /// every device, and host stamps (harness session, branch, source
+    /// context) repeat on every turn while rarely changing. A missing field
+    /// equals `null`. `same` decides equality per field.
+    fn update_changed(
+        &mut self,
+        kind: &str,
+        id: &str,
+        set: BTreeMap<String, Value>,
+        same: impl Fn(&str, &Value, &Value) -> bool,
+    ) {
+        let current = self.overlay_row(kind, id);
+        let set: BTreeMap<String, Value> = set
+            .into_iter()
+            .filter(|(key, value)| {
+                let now = current
+                    .as_ref()
+                    .and_then(|row| row.fields.get(key))
+                    .unwrap_or(&Value::Null);
+                !same(key, now, value)
+            })
+            .collect();
+        if !set.is_empty() {
+            self.write(kind, id, OpKind::Update, set);
+        }
+    }
+
     fn delete_row_ops(&mut self, keys: &[(&str, &str)]) {
         let hlc = self.next_hlc();
         let ops = keys
@@ -1083,6 +1115,21 @@ impl RegistryDoc {
         Ok(true)
     }
 
+    /// A device removed from the account (Settings → Devices, from any other
+    /// device): its row tombstoned, as the edge retires a deleted Cloud
+    /// session's machine. Nothing lists or dials it after (`device_deleted`);
+    /// its chats and spaces keep their rows. The device's own engine revives
+    /// the row at its next boot (`upsert_device` is a newer write), so a
+    /// computer still signed in comes back the next time Zeron opens on it.
+    /// `false` when no such row (already gone, or never heard of).
+    pub fn delete_device(&mut self, device_id: &str) -> Result<bool, DocError> {
+        if !self.row_exists(KIND_DEVICES, device_id) {
+            return Ok(false);
+        }
+        self.delete_row_ops(&[(KIND_DEVICES, device_id)]);
+        Ok(true)
+    }
+
     /// Stamp `lastSeenAt` on an existing device row (boot/shutdown only —
     /// periodic liveness rides presence frames, never rows).
     pub fn set_device_last_seen(
@@ -1145,47 +1192,30 @@ impl RegistryDoc {
         Ok(())
     }
 
+    /// A Space as it reads: its repository's name and icon over its own
+    /// (`repository_looks`). Sets of those two go through `rename_space` and
+    /// `set_space_icon`; never write a value read here back with `upsert_space`.
     pub fn space(&self, space_id: &str) -> Result<Option<Space>, DocError> {
-        Ok(self
-            .overlay_row(KIND_SPACES, space_id)
-            .and_then(|row| row_to::<crate::workspace::RawSpace>(&row))
-            .map(Space::from))
+        Ok(self.space_with_look(space_id))
     }
 
     pub fn read_spaces(&self) -> Result<Vec<Space>, DocError> {
-        let mut spaces: Vec<Space> = self
-            .read_kind::<crate::workspace::RawSpace>(KIND_SPACES)
-            .into_iter()
-            .map(Space::from)
-            .collect();
-        spaces.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(spaces)
+        Ok(self.spaces_with_looks())
     }
 
-    /// LWW display-name set from any device; `None` clears back to the derived
-    /// name (basename of path). `false` when no such row.
+    /// LWW display-name set from any device, for every copy of its repository;
+    /// `None` clears back to the derived name (basename of path). `false` when
+    /// no such row.
     pub fn rename_space(&mut self, space_id: &str, name: Option<&str>) -> Result<bool, DocError> {
-        if !self.row_exists(KIND_SPACES, space_id) {
-            return Ok(false);
-        }
-        self.write(
-            KIND_SPACES,
-            space_id,
-            OpKind::Update,
-            fields([("name", opt_str(name))]),
-        );
-        Ok(true)
+        Ok(self.write_look_field(space_id, "name", opt_str(name)))
     }
 
-    /// LWW picture set from any device, whole (emoji, image and hue in one
-    /// field); `None` clears back to the default tile. `false` when no row.
+    /// LWW picture set from any device, for every copy of its repository, whole
+    /// (emoji, image and hue in one field); `None` clears back to the default
+    /// tile. `false` when no row.
     pub fn set_space_icon(&mut self, space_id: &str, icon: Option<&zeron_proto::SpaceIcon>) -> Result<bool, DocError> {
-        if !self.row_exists(KIND_SPACES, space_id) {
-            return Ok(false);
-        }
         let value = icon.map_or(Value::Null, |icon| json!(icon));
-        self.write(KIND_SPACES, space_id, OpKind::Update, fields([("icon", value)]));
-        Ok(true)
+        Ok(self.write_look_field(space_id, "icon", value))
     }
 
     /// Owner-stamped git presence for the space folder (ownership is asserted
@@ -1436,6 +1466,43 @@ impl RegistryDoc {
         Ok(true)
     }
 
+    /// The chat's activity times, and nothing else on its row.
+    pub fn set_chat_activity(
+        &mut self,
+        chat_id: &str,
+        last_message_at: Option<i64>,
+        created_at: Option<i64>,
+    ) -> Result<bool, DocError> {
+        if !self.row_exists(KIND_CHATS, chat_id) {
+            return Ok(false);
+        }
+        let mut set = BTreeMap::new();
+        if let Some(ms) = last_message_at {
+            set.insert("lastMessageAt".to_string(), json!(ms));
+        }
+        if let Some(ms) = created_at {
+            set.insert("createdAt".to_string(), json!(ms));
+        }
+        if !set.is_empty() {
+            self.write(KIND_CHATS, chat_id, OpKind::Update, set);
+        }
+        Ok(true)
+    }
+
+    /// Re-home a chat, and nothing else on its row.
+    pub fn set_chat_host(&mut self, chat_id: &str, device_id: &str) -> Result<bool, DocError> {
+        if !self.row_exists(KIND_CHATS, chat_id) {
+            return Ok(false);
+        }
+        self.write(
+            KIND_CHATS,
+            chat_id,
+            OpKind::Update,
+            fields([("deviceId", json!(device_id))]),
+        );
+        Ok(true)
+    }
+
     /// Flip the chat's sync room generation (docs/chat2-sync.md M2). The
     /// host calls this in the same breath as seeding the chat2 checkpoint;
     /// LWW per-field like every registry write, so the flip is per-chat and
@@ -1444,11 +1511,11 @@ impl RegistryDoc {
         if !self.row_exists(KIND_CHATS, chat_id) {
             return Ok(false);
         }
-        self.write(
+        self.update_changed(
             KIND_CHATS,
             chat_id,
-            OpKind::Update,
             fields([("roomGen", json!(room_gen))]),
+            same_value,
         );
         Ok(true)
     }
@@ -1457,11 +1524,11 @@ impl RegistryDoc {
         if !self.row_exists(KIND_CHATS, chat_id) {
             return Ok(false);
         }
-        self.write(
+        self.update_changed(
             KIND_CHATS,
             chat_id,
-            OpKind::Update,
             fields([("branch", json!(branch))]),
+            same_value,
         );
         Ok(true)
     }
@@ -1474,15 +1541,30 @@ impl RegistryDoc {
         if !self.row_exists(KIND_CHATS, chat_id) {
             return Ok(false);
         }
-        self.write(
+        // Captured before every fresh dispatch: unchanged unless the
+        // checkout moved. `observedAt` alone moving is not a change (nothing
+        // reads it back).
+        self.update_changed(
             KIND_CHATS,
             chat_id,
-            OpKind::Update,
             fields([
                 ("sourceContext", serde_json::to_value(context)?),
                 ("branch", json!(context.branch)),
                 ("checkoutId", json!(context.checkout_id)),
             ]),
+            |key, now, next| {
+                if key != "sourceContext" {
+                    return now == next;
+                }
+                let observed = |value: &Value| {
+                    let mut value = value.clone();
+                    if let Some(map) = value.as_object_mut() {
+                        map.remove("observedAt");
+                    }
+                    value
+                };
+                observed(now) == observed(next)
+            },
         );
         Ok(true)
     }
@@ -1494,12 +1576,7 @@ impl RegistryDoc {
         if !self.row_exists(KIND_CHATS, chat_id) {
             return Ok(false);
         }
-        self.write(
-            KIND_CHATS,
-            chat_id,
-            OpKind::Update,
-            fields([("cwd", json!(cwd))]),
-        );
+        self.update_changed(KIND_CHATS, chat_id, fields([("cwd", json!(cwd))]), same_value);
         Ok(true)
     }
 
@@ -1511,11 +1588,11 @@ impl RegistryDoc {
         if !self.row_exists(KIND_CHATS, chat_id) {
             return Ok(false);
         }
-        self.write(
+        self.update_changed(
             KIND_CHATS,
             chat_id,
-            OpKind::Update,
             fields([("checkoutId", json!(checkout_id))]),
+            same_value,
         );
         Ok(true)
     }
@@ -1550,15 +1627,17 @@ impl RegistryDoc {
         if !self.row_exists(KIND_CHATS, chat_id) {
             return Ok(false);
         }
-        self.write(
+        // Stamped at every SessionStarted and Done, while one session
+        // usually spans many turns.
+        self.update_changed(
             KIND_CHATS,
             chat_id,
-            OpKind::Update,
             fields([
                 ("harnessSessionId", json!(session_id)),
                 ("harnessSessionCwd", json!(cwd)),
                 ("harnessSessionHarness", opt_str(harness)),
             ]),
+            same_value,
         );
         Ok(true)
     }
@@ -1848,6 +1927,11 @@ fn fields<const N: usize>(entries: [(&str, Value); N]) -> BTreeMap<String, Value
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect()
+}
+
+/// Plain JSON equality, for [`RegistryDoc::update_changed`].
+fn same_value(_key: &str, now: &Value, next: &Value) -> bool {
+    now == next
 }
 
 fn opt_str(value: Option<&str>) -> Value {

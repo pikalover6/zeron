@@ -22,6 +22,11 @@
 --                          promise ({ emoji?, image?, hue? }; nil, its
 --                          default tile again)
 --   sessions.rename_device(id, name)  a promise (Settings → Devices)
+--   sessions.remove_device(id)  another of your devices off the account, on
+--                          every device: a promise, refused "here" (this
+--                          one), "online" (it's on now), "cloud", "outdated"
+--                          or "offline"; its sessions and projects stay
+--   sessions.rename_project_or_say(id, name)  rename_project, as a promise
 --   sessions.delete(id)    gone for good: a promise
 --   sessions.link(id)      its Zeron conversation link: a promise
 --   sessions.collapse(id, folded)  a section of yours folded, everywhere
@@ -29,6 +34,7 @@
 --   sessions.sleep(id, until?)  asleep until `until` (Unix seconds), on every
 --                          device; none, awake (its host wakes it early when
 --                          it asks for you)
+--   sessions.stop(id)      its turn stopped, wherever it runs: a promise
 --   sessions.stop_waiting(id)  what its agent said it waits on no longer
 --                          holds it
 --   sessions.place(places) where sessions are put by hand, as the sidebar
@@ -82,6 +88,9 @@ export type Child = {
 	created: number,
 	harness: string?,
 	agent: string?,
+	-- Started by a Zeron chat (through Zeron's tools), as a subagent or a
+	-- side chat: "subagent" | "side"; nil for one the person started.
+	child_kind: string?,
 }
 -- `github`: its GitHub repository (`owner/name`), the one a Cloud chat of it
 -- clones.
@@ -125,6 +134,32 @@ M.now = ui.shared("sessions", {
 	places = { pinned = {}, sections = {} },
 	places_ready = false,
 } :: Now)
+
+-- Its parts, each followed on its own: a chat's message changes `chats`
+-- (every few seconds while chats run), and what reads only the projects,
+-- the devices or the places doesn't run again for it. Read one of these,
+-- not `now:get().projects`, where the part is all that's used.
+M.projects = ui.computed(function(): { Project }
+	return M.now:get().projects
+end)
+M.devices = ui.computed(function(): { Device }
+	return M.now:get().devices
+end)
+M.places = ui.computed(function(): Places
+	return M.now:get().places
+end)
+M.here = ui.computed(function(): string?
+	return M.now:get().here
+end)
+M.state = ui.computed(function(): string
+	return M.now:get().state
+end)
+M.archived = ui.computed(function(): { Chat }
+	return M.now:get().archived or {}
+end)
+M.connection = ui.computed(function(): string?
+	return M.now:get().connection
+end)
 
 local function quietly(): (any) -> ()
 	return function() end
@@ -170,6 +205,15 @@ function M.rename_device(id: string, name: string): any
 	return ui.call("sessions.rename_device", { id = id, name = name })
 end
 
+function M.remove_device(id: string): any
+	return ui.call("sessions.remove_device", id)
+end
+
+-- (Settings → Projects says when it didn't go; the sidebar's editor doesn't.)
+function M.rename_project_or_say(id: string, name: string): any
+	return ui.call("sessions.rename_project", { id = id, name = name })
+end
+
 -- Its Zeron conversation link (`zeron://open/chat/…`, the shipping app's,
 -- so either opens it): a promise; refused while it can't be known yet.
 function M.link(id: string): any
@@ -190,6 +234,11 @@ end
 function M.sleep(id: string, until_at: number?): any
 	-- (`until` is Luau's word: a key spelled out.)
 	return ui.call("sessions.sleep", { id = id, ["until"] = until_at })
+end
+
+-- Its turn stopped, wherever it runs (the composer's Stop): a promise.
+function M.stop(id: string): any
+	return ui.call("chat.interrupt", id)
 end
 
 function M.stop_waiting(id: string): any

@@ -30,7 +30,7 @@ local function home(app: any)
 end
 
 local function panel(app: any)
-	if not showing(app, 'role:button "Device"') then
+	if not showing(app, 'role:menuitem "Device"') then
 		app:click('role:button "Branch"')
 		settle(app)
 	end
@@ -38,7 +38,7 @@ end
 
 local function open_row(app: any, row: string)
 	panel(app)
-	app:click(`role:button "{row}"`)
+	app:click(`role:menuitem "{row}"`)
 	settle(app)
 end
 
@@ -51,7 +51,7 @@ end
 local function chosen(app: any, row: string): string
 	rested(app)
 	local words = {}
-	for line in app:tree(`role:button "{row}"`):gmatch("[^\n]+") do
+	for line in app:tree(`role:menuitem "{row}"`):gmatch("[^\n]+") do
 		local t = line:match('text "([^"]*)"')
 		if t then
 			table.insert(words, t)
@@ -79,7 +79,7 @@ local function cloud_calls(app: any): string
 	return table.concat((app:state("cloud_stub_calls") :: any) or {}, ",")
 end
 
-test("Cloud is offered for a project it can open, and only while it's on", function()
+test("Cloud is offered while it's on, from the project's repository when it can open it", function()
 	local app = mount("chat_fixture.luau")
 	home(app)
 	-- No Cloud for the account yet: your computers alone.
@@ -92,10 +92,12 @@ test("Cloud is offered for a project it can open, and only while it's on", funct
 	expect(app:has('role:option ~"Cloud"')).to_be(true)
 	expect(app:has('role:option ~"Cloud" >> ~"A machine of its own, from acme/atlas"')).to_be(true)
 	close(app)
-	-- A project Cloud can't open (no GitHub repository): no Cloud.
+	-- A project Cloud can't open (no GitHub repository): Cloud still, its
+	-- plain line (picked, it brings a project it can open).
 	pick_in(app, "Project", "Notes")
 	open_row(app, "Device")
-	expect(app:has('role:option ~"Cloud"')).to_be(false)
+	expect(app:has('role:option ~"Cloud"')).to_be(true)
+	expect(app:has('role:option ~"from acme/atlas"')).to_be(false)
 end)
 
 test("on Cloud, the branches are GitHub's and there's no checkout to choose", function()
@@ -109,11 +111,11 @@ test("on Cloud, the branches are GitHub's and there's no checkout to choose", fu
 	expect(cloud_calls(app)).to_contain("cloud.branches:acme/atlas")
 	expect(chip(app)).to_be("main")
 	panel(app)
-	expect(showing(app, 'role:button "Checkout"')).to_be(false)
+	expect(showing(app, 'role:menuitem "Checkout"')).to_be(false)
 	expect(app:has('role:option "main Default"')).to_be(true)
 	expect(app:has('role:option "release/3.0"')).to_be(true)
 	-- On Cloud, the projects are those it can open.
-	app:click('role:button "Project"')
+	app:click('role:menuitem "Project"')
 	settle(app)
 	expect(app:has('role:option ~"Atlas"')).to_be(true)
 	expect(app:has('role:option ~"Notes"')).to_be(false)
@@ -124,7 +126,7 @@ test("on Cloud, the branches are GitHub's and there's no checkout to choose", fu
 	pick_in(app, "Device", "MacBook Pro")
 	expect(chosen(app, "Project")).to_contain("Atlas")
 	panel(app)
-	expect(showing(app, 'role:button "Checkout"')).to_be(true)
+	expect(showing(app, 'role:menuitem "Checkout"')).to_be(true)
 end)
 
 test("a send on Cloud makes the chat there and runs it in its machine's checkout", function()
